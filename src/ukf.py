@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import math
 import rospy
 from geometry_msgs.msg import PoseStamped, PointStamped
 import numpy as np
@@ -78,6 +79,7 @@ ukf = create_ukf()
 kf = create_kf()
 
 first_frame = True
+first_ukf_frame = True
 pose_last = 0
 time_last = 0
 pose_now = 0
@@ -86,9 +88,25 @@ dt = 0
 pub_nv = rospy.Publisher('naive_vel', PointStamped, queue_size = 1)
 pub_kv = rospy.Publisher('kf_vel', PointStamped, queue_size = 1)
 pub_ukv = rospy.Publisher('ukf_vel', PointStamped, queue_size = 1)
+E_last = 0
+E_now = 0
+v_last = 0
+v_now = 0
+pub_drag = rospy.Publisher('drag_coefficient', PointStamped, queue_size = 1)
+count = 0
+t_last = 0
+t_now = 0
+
+def saturate(x, lim):
+	if x > lim:
+		return lim
+	elif x < -lim:
+		return -lim
+	else:
+		return x
 
 def callback(msg):
-	global first_frame, pose_last, time_last, pose_now, time_now, kf, ukf
+	global first_frame, pose_last, time_last, pose_now, time_now, kf, ukf, first_ukf_frame, E_last, E_now, v_last, v_now, count, t_last, t_now
 	if first_frame == True:
 		first_frame = False
 		pose_last = [msg.pose.position.x, msg.pose.position.y, msg.pose.position.z]
@@ -116,9 +134,9 @@ def callback(msg):
 
 	n_v = PointStamped()
 	n_v.header.stamp = rospy.Time.from_sec(time_now)
-	n_v.point.x = naive_vel[0]
-	n_v.point.y = naive_vel[1]
-	n_v.point.z = naive_vel[2]
+	n_v.point.x = saturate(naive_vel[0], 5)
+	n_v.point.y = saturate(naive_vel[1], 5)
+	n_v.point.z = saturate(naive_vel[2], 5)
 	pub_nv.publish(n_v)
 
 	k_v = PointStamped()
@@ -137,6 +155,38 @@ def callback(msg):
 
 	pose_last = pose_now
 	time_last = time_now
+
+	if first_ukf_frame == True:
+		first_ukf_frame = False
+		v_last = ukf_v
+		E_last = 1 / 2 * (v_last[0] ** 2 + v_last[1] ** 2 + v_last[2] ** 2) + 9.81 * pose_now[2]
+		t_last = time_now
+		return
+	
+	if count < 10:
+		count += 1
+		return
+	
+	count = 0
+	t_now = time_now
+	dt_long = t_now - t_last
+	
+	v_now = ukf_v
+	E_now = 1 / 2 * (v_now[0] ** 2 + v_now[1] ** 2 + v_now[2] ** 2) + 9.81 * pose_now[2]
+	v_avg = [i/2 + j/2 for i, j in zip(v_last, v_now)]
+	drag_coefficient = (E_last - E_now) / math.sqrt(v_avg[0] ** 2 + v_avg[1] ** 2 + v_avg[2] ** 2) ** 3 / dt_long
+	
+	drag = PointStamped()
+	drag.header.stamp = n_v.header.stamp
+	drag.point.x = E_now #saturate(drag_coefficient, 2)
+	drag.point.y = E_now - E_last #saturate(drag_coefficient, 2)
+	drag.point.z = saturate(drag_coefficient, 2)
+	pub_drag.publish(drag)
+
+	v_last = v_now
+	E_last = E_now
+	
+
 
 
 
