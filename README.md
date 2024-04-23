@@ -1,3 +1,5 @@
+scene: ball free fall
+
 sub: /natnet/ball/pose
 
 pub: /naive_vel /kf_vel /ukf_vel
