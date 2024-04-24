@@ -19,16 +19,14 @@ F = np.array([[1, 0, 0, dt, 0, 0],
 H = np.array([[1.0, 0.0, 0.0, 0.0, 0.0, 0.0],
 			[0.0, 1.0, 0.0, 0.0, 0.0, 0.0],
 			[0.0, 0.0, 1.0, 0.0, 0.0, 0.0]])
-R = np.eye(3) * 0.001;
-R = np.diag([0.005**2, 0.005**2, 0.005**2])
+R = np.diag([0.01, 0.01, 0.01])
 Q = np.array([[0.001, 0, 0, 0, 0, 0],
 			[0, 0.001, 0, 0, 0, 0],
 			[0, 0, 0.001, 0, 0, 0],
-			[0, 0, 0, 10, 0, 0],
-			[0, 0, 0, 0, 10, 0],
-			[0, 0, 0, 0, 0, 10]])
-Q[0:3, 0:3] = Q_discrete_white_noise(3, dt=dt, var=0.)
-Q[3:6, 3:6] = Q_discrete_white_noise(3, dt=dt, var=10)
+			[0, 0, 0, 100, 0, 0],
+			[0, 0, 0, 0, 100, 0],
+			[0, 0, 0, 0, 0, 100]])
+# Don't use Q_discrete_white_noise, it is not even
 
 def fx(x, dt):
 	F = np.array([[1, 0, 0, dt, 0, 0],
@@ -96,6 +94,8 @@ pub_drag = rospy.Publisher('drag_coefficient', PointStamped, queue_size = 1)
 count = 0
 t_last = 0
 t_now = 0
+pub_ukx = rospy.Publisher('ukf_pos', PointStamped, queue_size = 1)
+pub_kx = rospy.Publisher('kf_pos', PointStamped, queue_size = 1)
 
 def saturate(x, lim):
 	if x > lim:
@@ -128,9 +128,13 @@ def callback(msg):
 
 	naive_vel = [k / (time_now - time_last) for k in pose_diff]
 	# print(naive_vel)
-	kf_v = get_kf_output(kf, pose_now, dt).tolist()[3:6]
+	kf_output = get_kf_output(kf, pose_now, dt).tolist()
+	kf_v = kf_output[3:6]
+	kf_x = kf_output[0:3]
 	# print(kf_v)
-	ukf_v = get_ukf_output(ukf, pose_now, dt).tolist()[3:6]
+	ukf_output = get_ukf_output(ukf, pose_now, dt).tolist()
+	ukf_v = ukf_output[3:6]
+	ukf_x = ukf_output[0:3]
 
 	n_v = PointStamped()
 	n_v.header.stamp = rospy.Time.from_sec(time_now)
@@ -152,6 +156,20 @@ def callback(msg):
 	uk_v.point.y = ukf_v[1]
 	uk_v.point.z = ukf_v[2]
 	pub_ukv.publish(uk_v)
+
+	uk_x = PointStamped()
+	uk_x.header.stamp = n_v.header.stamp
+	uk_x.point.x = ukf_x[0]
+	uk_x.point.y = ukf_x[1]
+	uk_x.point.z = ukf_x[2]
+	pub_ukx.publish(uk_x)
+
+	k_x = PointStamped()
+	k_x.header.stamp = n_v.header.stamp
+	k_x.point.x = kf_x[0]
+	k_x.point.y = kf_x[1]
+	k_x.point.z = kf_x[2]
+	pub_kx.publish(k_x)
 
 	pose_last = pose_now
 	time_last = time_now
