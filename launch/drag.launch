@@ -2,7 +2,7 @@
 
     <node pkg="rosbag" type="play" name="player" output="screen" args="--clock $(find ukf)/bag/2024-04-22-22-04-18.bag"/>
 
-    <node pkg="ukf" type="ukf.py" name="ukf_node"/>
+    <node pkg="ukf" type="ukf.py" name="ukf_node" output="screen"/>
 
     <!-- <node pkg="rosbag" type="record" name="recorder" args="record -O $(find ukf)/bag/drag.bag /drag_coefficient /ukf_vel /natnet_ros/ball/pose" output="screen"/> -->
 </launch>   
