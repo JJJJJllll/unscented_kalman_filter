@@ -1,53 +1,56 @@
 #!/usr/bin/env python3
+import math
 import rospy
 from geometry_msgs.msg import PoseStamped, PointStamped
 import numpy as np
 from filterpy.kalman import KalmanFilter as KF
 
-'''
-[[]]  [ , ]
-1x1-R 1x3-H 3x1-B/x 3x3-F
-'''
+def get_linearized_F(dt: float, k:float, v):
+	'''v: np.array(3,)'''
+	vnorm = v.dot(v) ** 0.5
+	return np.array([[1, 0, 0, dt - 0.5 * k * (vnorm ** 2 * v[0] ** 2 + vnorm), 0, 0, - 0.5 * vnorm * v[0] * dt ** 2],
+					[0, 1, 0, 0, dt - 0.5 * k * (vnorm ** 2 * v[1] ** 2 + vnorm), 0, - 0.5 * vnorm * v[1] * dt ** 2],
+					[0, 0, 1, 0, 0, dt - 0.5 * k * (vnorm ** 2 * v[2] ** 2 + vnorm), - 0.5 * vnorm * v[2] * dt ** 2],
+					[0, 0, 0, 1 - k * dt * (vnorm ** 2 * v[0] ** 2 + vnorm), 0, 0, - vnorm * v[0] * dt],
+					[0, 0, 0, 0, 1 - k * dt * (vnorm ** 2 * v[1] ** 2 + vnorm), 0, - vnorm * v[1] * dt],
+					[0, 0, 0, 0, 0, 1 - k * dt * (vnorm ** 2 * v[2] ** 2 + vnorm), - vnorm * v[2] * dt],
+					[0, 0, 0, 0, 0, 0, 1]])
+
 def get_kf_output(kf, pose, dt):
 	kf.dt = dt
-	if kf.x[1, 0] > 0:
-		kf.F = np.array([[1, dt, 0],
-						[0, 1 - 2 * kf.x[2, 0] * kf.x[1, 0] * dt, - kf.x[1, 0] ** 2 * dt],
-						[0, 0, 1]])
-	elif kf.x[1, 0] == 0:
-		kf.F = np.array([[1, dt, 0],
-						[0, 0, 0],
-						[0, 0, 1]])
-	else:
-		kf.F = np.array([[1, dt, 0],
-						[0, 1 + 2 * kf.x[2, 0] * kf.x[1, 0] * dt, kf.x[1, 0] ** 2 * dt],
-						[0, 0, 1]])
-	kf.B = np.array([[0], [dt], [0]])
+	kf.F = get_linearized_F(dt, kf.x[6, 0], kf.x[3:6, 0])
+	kf.B = np.array([[0], [0], [-9.8 * dt], [0], [0], [dt], [0]])
 	kf.predict(u=-9.8)
 	kf.update(pose)
 	return kf.x.copy()
 
-kf = KF(dim_x=3, dim_z=1, dim_u=1)
-x0, v0, k0, dt = 1.3, 4.0, 0.06, 1 / 120
-kf.x = np.array([[x0], [v0], [k0]])
+'''
+[[]]  [ , ]
+3x3-R 3x7-H 7x1-B/x 7x7-F
+'''
+kf = KF(dim_x=7, dim_z=3, dim_u=1)
+x0, y0, z0, vx0, vy0, vz0, k0, dt, vnorm0 = 1.25, 0.26, 1.3, -0.2, 0.1, 4.0, 0.06, 1 / 120, math.sqrt(0.2**2 + 0.1**2+ 4.0**2)
+kf.x = np.array([[x0], [y0], [z0], [vx0], [vy0], [vz0], [k0]])
 kf.dt = dt
-kf.F = np.array([[1, dt, 0],
-				[0, 1 - 2 * k0 * v0 * dt, - v0 ** 2 * dt],
-				[0, 0, 1]])
-kf.H = np.array([[1, 0, 0]])
-kf.R = np.array([[0.01]])
-kf.Q = np.diag([0.01, 1000, 1000])
-kf.B = np.array([[0], [dt], [0]])
+kf.F = get_linearized_F(dt=dt, k=k0, v=np.array([vx0, vy0, vz0]))
+kf.H = np.zeros([3, 7])
+kf.H[0:3, 0:3] = np.eye(3)
+kf.R = np.eye(3) * 0.01
+kf.Q = np.diag([0.01, 0.01, 0.01, 10000, 10000, 10000, 10000])
+kf.B = np.array([[0], [0], [0], [0], [0], [dt], [0]])
 
 first_frame = True
 time_last = 0
-pub_kf = rospy.Publisher('kf', PointStamped, queue_size = 1)
+pub_kf_x = rospy.Publisher('kf_x', PointStamped, queue_size = 1)
+pub_kf_v = rospy.Publisher('kf_v', PointStamped, queue_size = 1)
+pub_kf_drag = rospy.Publisher('kf_drag', PointStamped, queue_size = 1)
 
-z_last = 0
+pose_last = 0
 pub_nv = rospy.Publisher('nv', PointStamped, queue_size = 1)
 
 def callback(msg):
-	global first_frame, time_last, kf, pose_last, z_last
+	global first_frame, time_last, kf, pose_last, pose_last
+	rospy.loginfo(f"x: {kf.x.shape}, F: {kf.F.shape}, H: {kf.H.shape}, R: {kf.R.shape}. Q: {kf.Q.shape}, B: {kf.B.shape}")
 	if first_frame == True:
 		first_frame = False
 		time_last = msg.header.stamp.to_sec()
@@ -57,26 +60,40 @@ def callback(msg):
 	time_now = msg.header.stamp.to_sec()
 	dt = time_now - time_last
 	
-	z = msg.pose.position.z
-	kf_output = get_kf_output(kf, z, dt)
+	pose = msg.pose.position
+	kf_output = get_kf_output(kf, np.array([[pose.x], [pose.y], [pose.z]]), dt)
 	# rospy.loginfo(f"data: {kf_output.shape}")
 
-	kf_pub = PointStamped()
-	kf_pub.header.stamp = rospy.Time.from_sec(time_now)
-	kf_pub.point.x = kf_output[0, 0] # h
-	kf_pub.point.y = kf_output[1, 0] # hdot
-	kf_pub.point.z = kf_output[2, 0] # drag coefficient
-	pub_kf.publish(kf_pub)
+	kf_pub_x = PointStamped()
+	kf_pub_x.header.stamp = rospy.Time.from_sec(time_now)
+	kf_pub_x.point.x = kf_output[0, 0]
+	kf_pub_x.point.y = kf_output[1, 0]
+	kf_pub_x.point.z = kf_output[2, 0]
+	pub_kf_x.publish(kf_pub_x)
+	
+	kf_pub_v = PointStamped()
+	kf_pub_v.header.stamp = rospy.Time.from_sec(time_now)
+	kf_pub_v.point.x = kf_output[3, 0]
+	kf_pub_v.point.y = kf_output[4, 0]
+	kf_pub_v.point.z = kf_output[5, 0]
+	pub_kf_v.publish(kf_pub_v)
+
+	kf_pub_drag = PointStamped()
+	kf_pub_drag.header.stamp = rospy.Time.from_sec(time_now)
+	kf_pub_drag.point.x = kf_output[6, 0]
+	kf_pub_drag.point.y = kf_output[6, 0]
+	kf_pub_drag.point.z = kf_output[6, 0]
+	pub_kf_drag.publish(kf_pub_drag)
 
 	nv_pub = PointStamped()
-	nv_pub.header.stamp = kf_pub.header.stamp
-	nv_pub.point.x = 0
-	nv_pub.point.y = 0
-	nv_pub.point.z = (z - z_last) / dt
+	nv_pub.header.stamp = kf_pub_x.header.stamp
+	nv_pub.point.x = (pose.x - pose_last.x) / dt
+	nv_pub.point.y = (pose.y - pose_last.y) / dt
+	nv_pub.point.z = (pose.z - pose_last.z) / dt
 	pub_nv.publish(nv_pub)
 	
 	time_last = time_now
-	z_last = z
+	pose_last = pose
 
 
 
