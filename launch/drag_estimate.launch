@@ -1,9 +1,11 @@
 <launch>
 
-    <node pkg="rosbag" type="play" name="player" args="--clock $(find ukf)/bag/04cut.bag"/>
+    
 
     <node pkg="ukf" type="ukf.py" name="ukf_node" output="screen"/>
 
-    <node pkg="rosbag" type="record" name="recorder" args="record -O $(find ukf)/bag/drag_estimate_kf_3.bag /kf /nv /natnet_ros/ball/pose" output="screen"/>
+    <node pkg="rosbag" type="play" name="player" args="--clock $(find ukf)/bag/plus04cut.bag"/>
+
+    <node pkg="rosbag" type="record" name="recorder" args="record -O $(find ukf)/bag/drag_estimate_kf_3.bag /kf_k /kf_vel /natnet_ros/ball/pose" output="screen"/>
 
 </launch>   
