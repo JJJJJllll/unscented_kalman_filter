@@ -39,6 +39,17 @@
 import rospy
 from std_msgs.msg import String
 
+first_frame = True
+z0 = 0
+
+def callback(msg):
+    global first_frame, z0
+    if first_frame == True:
+        first_frame = False
+        z0 = msg.pose.position.z
+
+
+
 def talker():
     pub = rospy.Publisher('chatter', String, queue_size=10)
     rospy.init_node('talker', anonymous=True)
@@ -49,7 +60,17 @@ def talker():
         pub.publish(hello_str)
         rate.sleep()
 
+    if first_frame == True:
+        return
+
 if __name__ == '__main__':
+    rospy.init_node("predict", anonymous=True)
+    rospy.loginfo("predict node init")
+
+    pose_name = "/natnet_ros/ball/pose"
+    rospy.Subscriber(pose_name, PoseStamped, callback)
+    rospy.loginfo(f"predict node is subscribing {pose_name}")
+    
     try:
         talker()
     except rospy.ROSInterruptException:
