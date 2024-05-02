@@ -35,6 +35,12 @@ class optionalEKF(KF):
 			self.H = np.array([[1]])
 			self.Q = np.diag([0.00001]) # define k=k, in other words as smooth as possible
 			self.F = np.array([[1]])
+		elif self.name == "x3v3":
+			super().__init__(dim_x=6, dim_z=3, dim_u=0)
+			self.H = np.zeros([3,6])
+			np.fill_diagonal(self.H, 1)
+			self.R = np.diag([0.02, 0.02, 0.02])
+			self.Q = np.diag([0.01, 0.01, 0.01, 100, 100, 100])
 	
 	def load_x0(self,
 			 	x0: np.array):
@@ -60,6 +66,9 @@ class optionalEKF(KF):
 								[0, 1 + 2 * self.x[2, 0] * self.x[1, 0] * dt, self.x[1, 0] ** 2 * dt],
 								[0, 0, 1]])
 			self.B = np.array([[0], [dt], [0]])
+		elif self.name == "x3v3":
+			self.F = np.eye(6)
+			self.F[0:3, 3:6] = np.eye(3) * dt
 
 	def dynamic_R(self, R):
 		self.R = R
@@ -80,6 +89,8 @@ class onlinePredict():
 		self.t_now = 0
 		self.z_last = 0
 		self.z_now = 0
+		self.pose_last = 0
+		self.pose_now = 0
 		self.count = 0
 		self.WARM_UP = 12
 		self.WARM_UP_OK = False
@@ -93,6 +104,7 @@ class onlinePredict():
 		self.x_subscriber = rospy.Subscriber("/natnet_ros/ball/pose", PoseStamped, self.estimator)
 		
 		self.kf_vel = optionalEKF(name="hv")
+		self.kf_x3v3 = optionalEKF(name="x3v3")
 		self.ekf_drag = optionalEKF(name="hvk")
 		self.ekf_k = optionalEKF(name="k")
 	
@@ -100,6 +112,8 @@ class onlinePredict():
 		self.pub_vel = rospy.Publisher('kf_vel', PointStamped, queue_size = 1)
 		self.pub_drag = rospy.Publisher('ekf_drag', PointStamped, queue_size = 1)
 		self.pub_k = rospy.Publisher('ekf_rls_k', PointStamped, queue_size = 1)
+		self.pub_x3 = rospy.Publisher('kf_x3', PointStamped, queue_size = 1)
+		self.pub_v3= rospy.Publisher('kf_v3', PointStamped, queue_size = 1)
 		rospy.loginfo("subscriber /natnet_ros/ball/pose init, publisher nv, kf_vel, eekf_drag, ekf_k init")
 
 		'''for predictor'''
@@ -115,17 +129,23 @@ class onlinePredict():
 			self.first_frame = False
 			self.t_last = msg.header.stamp.to_sec()
 			self.z_last = msg.pose.position.z
+			self.pose_last = np.array([[msg.pose.position.x], [msg.pose.position.y], [msg.pose.position.z]])
 
 			self.kf_vel.load_x0(x0=np.array([[self.z_last], [0]]))
+			self.kf_x3v3.load_x0(x0=np.concatenate((self.pose_last, np.array([[0], [0], [0]])), axis=0))
 			self.ekf_drag.load_x0(x0=np.array([[self.z_last], [0], [0.4]]))
 			return
 		
 		self.t_now = msg.header.stamp.to_sec()
 		dt = self.t_now - self.t_last
 		self.z_now = msg.pose.position.z
+		self.pose_now = np.array([[msg.pose.position.x], [msg.pose.position.y], [msg.pose.position.z]])
 		
 		self.kf_vel.linearize_FB(dt)
 		self.kf_vel.predict_update(pos=self.z_now)
+
+		self.kf_x3v3.linearize_FB(dt)
+		self.kf_x3v3.predict_update(pos=self.pose_now)
 	
 		self.ekf_drag.linearize_FB(dt)
 		self.ekf_drag.predict_update(pos=self.z_now, u=-9.8)
@@ -135,6 +155,20 @@ class onlinePredict():
 		vel.point.x = self.kf_vel.x[0, 0] # h
 		vel.point.y = self.kf_vel.x[1, 0] # hdot
 		self.pub_vel.publish(vel)
+
+		x3 = PointStamped()
+		x3.header.stamp = vel.header.stamp
+		x3.point.x = self.kf_x3v3.x[0, 0]
+		x3.point.y = self.kf_x3v3.x[1, 0]
+		x3.point.z = self.kf_x3v3.x[2, 0]
+		self.pub_x3.publish(x3)
+
+		v3 = PointStamped()
+		v3.header.stamp = vel.header.stamp
+		v3.point.x = self.kf_x3v3.x[3, 0]
+		v3.point.y = self.kf_x3v3.x[4, 0]
+		v3.point.z = self.kf_x3v3.x[5, 0]
+		self.pub_v3.publish(v3)
 
 		nv_pub = PointStamped()
 		nv_pub.header.stamp = vel.header.stamp
@@ -150,6 +184,7 @@ class onlinePredict():
 		
 		self.t_last = self.t_now
 		self.z_last = self.z_now
+		self.pose_last = self.pose_now
 
 		self.count += 1
 		if self.count < self.WARM_UP:
@@ -167,6 +202,7 @@ class onlinePredict():
 			self.k_last = k
 		else:
 			R = 1 / v_avg ** 3
+			# R = np.var(np.array([self.v_now, self.v_last])) / v_avg ** 3
 			C = self.P / (self.P + R)
 			self.k_now = self.k_last + C * (k - self.k_last)
 			self.P = self.P * R / (self.P + R)

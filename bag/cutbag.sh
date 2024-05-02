@@ -8,13 +8,13 @@ echo "bag: $ori_bag"
 t0=`rosbag info -y -k start $ori_bag`
 echo "file start time: $t0"
 
-t_start=`echo "$t0 + 18.2" | bc -l`
+t_start=`echo "$t0 + 18.0" | bc -l`
 echo "chosen start time: $t_start"
 
 t_end=`echo "$t0 + 19.31" | bc -l`
 echo "chosen end time: $t_end"
 
-tar_bag="$path/plus04cut.bag"
+tar_bag="$path/04cut.bag"
 echo "target bag: $tar_bag"
 
 rosbag filter $ori_bag $tar_bag "t.to_sec() >= $t_start and t.to_sec() <= $t_end"
