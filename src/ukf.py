@@ -112,9 +112,8 @@ class onlinePredict():
 		self.pub_vel = rospy.Publisher('kf_vel', PointStamped, queue_size = 1)
 		self.pub_drag = rospy.Publisher('ekf_drag', PointStamped, queue_size = 1)
 		self.pub_k = rospy.Publisher('ekf_rls_k', PointStamped, queue_size = 1)
-		self.pub_x3 = rospy.Publisher('kf_x3', PointStamped, queue_size = 1)
-		self.pub_v3= rospy.Publisher('kf_v3', PointStamped, queue_size = 1)
-		rospy.loginfo("subscriber /natnet_ros/ball/pose init, publisher nv, kf_vel, eekf_drag, ekf_k init")
+		self.pub_x3v3 = rospy.Publisher('kf_x3v3', PoseStamped, queue_size = 1)
+		rospy.loginfo("subscriber /natnet_ros/ball/pose init, publisher nv, kf_vel, kf_x3v3, eekf_drag, ekf_k init")
 
 		'''for predictor'''
 		self.ball_pose = []
@@ -156,19 +155,15 @@ class onlinePredict():
 		vel.point.y = self.kf_vel.x[1, 0] # hdot
 		self.pub_vel.publish(vel)
 
-		x3 = PointStamped()
-		x3.header.stamp = vel.header.stamp
-		x3.point.x = self.kf_x3v3.x[0, 0]
-		x3.point.y = self.kf_x3v3.x[1, 0]
-		x3.point.z = self.kf_x3v3.x[2, 0]
-		self.pub_x3.publish(x3)
-
-		v3 = PointStamped()
-		v3.header.stamp = vel.header.stamp
-		v3.point.x = self.kf_x3v3.x[3, 0]
-		v3.point.y = self.kf_x3v3.x[4, 0]
-		v3.point.z = self.kf_x3v3.x[5, 0]
-		self.pub_v3.publish(v3)
+		x3v3 = PoseStamped()
+		x3v3.header.stamp = vel.header.stamp
+		x3v3.pose.position.x = self.kf_x3v3.x[0, 0]
+		x3v3.pose.position.y = self.kf_x3v3.x[1, 0]
+		x3v3.pose.position.z = self.kf_x3v3.x[2, 0]
+		x3v3.pose.orientation.x = self.kf_x3v3.x[3, 0]
+		x3v3.pose.orientation.y = self.kf_x3v3.x[4, 0]
+		x3v3.pose.orientation.z = self.kf_x3v3.x[5, 0]
+		self.pub_x3v3.publish(x3v3)
 
 		nv_pub = PointStamped()
 		nv_pub.header.stamp = vel.header.stamp
