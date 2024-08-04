@@ -1,0 +1,11 @@
+<launch>
+  <node name="rqt_plot"
+        pkg="rqt_plot"
+        type="rqt_plot"
+        args="/rosout" />
+
+        <node name="rqt_plot1"
+        pkg="rqt_plot"
+        type="rqt_plot"
+        args="/rosout" />
+</launch>

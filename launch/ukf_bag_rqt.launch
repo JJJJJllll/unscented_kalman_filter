@@ -3,15 +3,15 @@
     <node pkg="rosbag" type="play" name="player" output="screen" args="--clock $(find ukf)/bag/2024-04-22-22-04-18.bag"/>
     ?>
 
+    <!-- 播放bag -->
     <node pkg="rosbag" type="play" name="player" output="screen" args="--clock $(find ukf)/bag/08cut2.bag"/>
 
-    <node pkg="ukf" type="ukf.py" name="ukf_node" output="screen"/>
+    <!-- 启动ukf -->
+    <node pkg="ukf" type="ukf_real.py" name="ukf_node" output="screen"/>
 
     <!-- 启动rqt_plot -->
-    <node name="pos_vel_plot"
-            pkg="rqt_plot"
-            type="rqt_plot"
-            args="/joint_states/position[0] /joint_states/position[1]" />
+    <node name="rqt_plot" pkg="rqt_plot" type="rqt_plot" args="/ukf_xv/pose/position /ukf_xv/pose/orientation" />
 
+    <!-- 记录bag -->
     <!-- <node pkg="rosbag" type="record" name="recorder" args="record -O $(find ukf)/bag/drag.bag /drag_coefficient /ukf_vel /natnet_ros/ball/pose" output="screen"/> -->
 </launch>   

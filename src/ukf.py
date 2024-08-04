@@ -92,7 +92,7 @@ class onlinePredict():
 		self.pose_last = 0
 		self.pose_now = 0
 		self.count = 0
-		self.WARM_UP = 12
+		self.WARM_UP = 30
 		self.WARM_UP_OK = False
 		self.E_last = 0
 		self.v_last = 0
@@ -103,13 +103,11 @@ class onlinePredict():
 
 		self.x_subscriber = rospy.Subscriber("/natnet_ros/ball/pose", PoseStamped, self.estimator)
 		
-		self.kf_vel = optionalEKF(name="hv")
 		self.kf_x3v3 = optionalEKF(name="x3v3")
 		self.ekf_drag = optionalEKF(name="hvk")
 		self.ekf_k = optionalEKF(name="k")
 	
 		self.pub_nv = rospy.Publisher('nv', PointStamped, queue_size = 1)
-		self.pub_vel = rospy.Publisher('kf_vel', PointStamped, queue_size = 1)
 		self.pub_drag = rospy.Publisher('ekf_drag', PointStamped, queue_size = 1)
 		self.pub_k = rospy.Publisher('ekf_rls_k', PointStamped, queue_size = 1)
 		self.pub_x3v3 = rospy.Publisher('kf_x3v3', PoseStamped, queue_size = 1)
@@ -119,7 +117,7 @@ class onlinePredict():
 		self.ball_pose = []
 		self.ball_vel = []
 		self.ball_t = []
-		self.g = - 9.8
+		self.g = np.array([0, 0, - 9.8])
 		self.first_predictor = True
 		self.pub_h = rospy.Publisher('pred_h', PointStamped, queue_size=1)
 
@@ -130,7 +128,6 @@ class onlinePredict():
 			self.z_last = msg.pose.position.z
 			self.pose_last = np.array([[msg.pose.position.x], [msg.pose.position.y], [msg.pose.position.z]])
 
-			self.kf_vel.load_x0(x0=np.array([[self.z_last], [0]]))
 			self.kf_x3v3.load_x0(x0=np.concatenate((self.pose_last, np.array([[0], [0], [0]])), axis=0))
 			self.ekf_drag.load_x0(x0=np.array([[self.z_last], [0], [0.4]]))
 			return
@@ -139,24 +136,15 @@ class onlinePredict():
 		dt = self.t_now - self.t_last
 		self.z_now = msg.pose.position.z
 		self.pose_now = np.array([[msg.pose.position.x], [msg.pose.position.y], [msg.pose.position.z]])
-		
-		self.kf_vel.linearize_FB(dt)
-		self.kf_vel.predict_update(pos=self.z_now)
 
 		self.kf_x3v3.linearize_FB(dt)
 		self.kf_x3v3.predict_update(pos=self.pose_now)
 	
 		self.ekf_drag.linearize_FB(dt)
 		self.ekf_drag.predict_update(pos=self.z_now, u=-9.8)
-		
-		vel = PointStamped()
-		vel.header.stamp = rospy.Time.from_sec(self.t_now)
-		vel.point.x = self.kf_vel.x[0, 0] # h
-		vel.point.y = self.kf_vel.x[1, 0] # hdot
-		self.pub_vel.publish(vel)
 
 		x3v3 = PoseStamped()
-		x3v3.header.stamp = vel.header.stamp
+		x3v3.header.stamp = rospy.Time.from_sec(self.t_now)
 		x3v3.pose.position.x = self.kf_x3v3.x[0, 0]
 		x3v3.pose.position.y = self.kf_x3v3.x[1, 0]
 		x3v3.pose.position.z = self.kf_x3v3.x[2, 0]
@@ -166,12 +154,12 @@ class onlinePredict():
 		self.pub_x3v3.publish(x3v3)
 
 		nv_pub = PointStamped()
-		nv_pub.header.stamp = vel.header.stamp
+		nv_pub.header.stamp = x3v3.header.stamp
 		nv_pub.point.z = (self.z_now - self.z_last) / dt
 		self.pub_nv.publish(nv_pub)
 
 		drag = PointStamped()
-		drag.header.stamp = vel.header.stamp
+		drag.header.stamp = x3v3.header.stamp
 		drag.point.x = self.ekf_drag.x[0, 0]
 		drag.point.y = self.ekf_drag.x[1, 0]
 		drag.point.z = self.ekf_drag.x[2, 0]
@@ -183,20 +171,20 @@ class onlinePredict():
 
 		self.count += 1
 		if self.count < self.WARM_UP:
-			self.v_last = self.kf_vel.x[1, 0]
-			self.E_last = 9.8 * self.z_now + 0.5 * self.v_last ** 2
+			self.v_last = self.kf_x3v3.x[3:6, 0]
+			self.E_last = 9.8 * self.z_now + 0.5 * np.linalg.norm(self.v_last) ** 2
 			return
 		self.WARM_UP_OK = True
-		self.v_now = self.kf_vel.x[1, 0]
-		E_now = 9.8 * self.z_now + 0.5 * self.v_now ** 2
+		self.v_now = self.kf_x3v3.x[3:6, 0]
+		E_now = 9.8 * self.z_now + 0.5 * np.linalg.norm(self.v_now) ** 2
 		v_avg = abs(self.v_now + self.v_last) / 2
-		k = abs(self.E_last - E_now) / dt / v_avg ** 3
+		k = abs(self.E_last - E_now) / dt / np.linalg.norm(v_avg) ** 3
 
 		if self.count == self.WARM_UP:
 			self.ekf_k.load_x0(x0=np.array([[k]]))
 			self.k_last = k
 		else:
-			R = 1 / v_avg ** 3
+			R = 1 / np.linalg.norm(v_avg) ** 2
 			# R = np.var(np.array([self.v_now, self.v_last])) / v_avg ** 3
 			C = self.P / (self.P + R)
 			self.k_now = self.k_last + C * (k - self.k_last)
@@ -207,7 +195,7 @@ class onlinePredict():
 			self.ekf_k.predict_update(pos=k)
 
 			k_pub = PointStamped()
-			k_pub.header.stamp = vel.header.stamp
+			k_pub.header.stamp = x3v3.header.stamp
 			k_pub.point.x = k
 			k_pub.point.y = self.ekf_k.x
 			k_pub.point.z = self.k_now
@@ -273,7 +261,7 @@ def main():
  
 	oP = onlinePredict()
 
-	rospy.Timer(rospy.Duration(1.0/100.0), oP.predictor)
+	# rospy.Timer(rospy.Duration(1.0/100.0), oP.predictor)
 
 	rospy.spin()
 

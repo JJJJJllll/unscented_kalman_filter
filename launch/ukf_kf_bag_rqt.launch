@@ -1,0 +1,22 @@
+<launch>
+    <?ignore
+    <node pkg="rosbag" type="play" name="player" output="screen" args="--clock $(find ukf)/bag/2024-04-22-22-04-18.bag"/>
+    ?>
+
+    <!-- 启动ukf -->
+    <node pkg="ukf" type="ukf_real.py" name="ukf_node" output="screen"/>
+
+    <!-- 启动kf -->
+    <node pkg="ukf" type="ukf.py" name="kf_node" output="screen"/>
+
+    <!-- 启动rqt_plot -->
+    <node name="rqt_plot0" pkg="rqt_plot" type="rqt_plot" args="/ukf_xv/pose/position/x /ukf_xv/pose/orientation/x /kf_x3v3/pose/position/x /kf_x3v3/pose/orientation/x" />
+    <node name="rqt_plot1" pkg="rqt_plot" type="rqt_plot" args="/ukf_xv/pose/position/y /ukf_xv/pose/orientation/y /kf_x3v3/pose/position/y /kf_x3v3/pose/orientation/y" />
+    <node name="rqt_plot2" pkg="rqt_plot" type="rqt_plot" args="/ukf_xv/pose/position/z /ukf_xv/pose/orientation/z /kf_x3v3/pose/position/z /kf_x3v3/pose/orientation/z" />
+
+    <!-- 播放bag -->
+    <node pkg="rosbag" type="play" name="player" output="screen" args="--clock $(find ukf)/bag/08cut1.bag"/>
+
+    <!-- 记录bag -->
+    <!-- <node pkg="rosbag" type="record" name="recorder" args="record -O $(find ukf)/bag/drag.bag /drag_coefficient /ukf_vel /natnet_ros/ball/pose" output="screen"/> -->
+</launch>   

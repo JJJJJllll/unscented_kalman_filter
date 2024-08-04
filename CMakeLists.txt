@@ -169,6 +169,9 @@ catkin_install_python(PROGRAMS src/talker.py
 catkin_install_python(PROGRAMS src/ukf.py
   DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
 )
+catkin_install_python(PROGRAMS src/ukf_real.py
+  DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
+)
 # catkin_install_python(PROGRAMS src/ukf_base.py
 #   DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
 # )
