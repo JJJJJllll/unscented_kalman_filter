@@ -7,7 +7,7 @@ from filterpy.common import Q_discrete_white_noise
 from filterpy.kalman import MerweScaledSigmaPoints
 
 FIRSTFRAME, SECONDFRAME = True, True
-FirstPose, pret, dt, ukf_filter = np.array([0,0,0], dtype=np.float), 0, 0, 0
+FirstPose, pret, dt, ukf_filter = np.array([0.0,0.0,0.0]), 0, 0, 0
 
 def ballPoseCallback(msg, ball_xv_pub):
 	global FIRSTFRAME, SECONDFRAME, FirstPose, pret, dt, ukf_filter
